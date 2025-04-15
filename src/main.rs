@@ -137,7 +137,7 @@ async fn handle_direct_connection(
 }
 
 async fn handle_proxy_connection(
-    client: tokio::net::TcpStream,
+    mut client: tokio::net::TcpStream,
     request: &http::HttpRequest,
     target_host: &str,
     port: u16,
@@ -156,8 +156,37 @@ async fn handle_proxy_connection(
                 target: target_host.to_string(),
                 port, // Use the target port from client request
             };
-            let proxy_stream = socks::forward_to_proxy(&socks5_request, host, *proxy_port).await;
-            handle_proxy_stream(client, proxy_stream).await?;
+            let proxy_stream_result =
+                socks::forward_to_proxy(&socks5_request, host, *proxy_port).await;
+            match proxy_stream_result {
+                Ok(mut proxy_stream) => {
+                    if request.method == "CONNECT" {
+                        // For CONNECT, just tunnel data
+                        let (mut ci, mut co) = client.into_split();
+                        let (mut pi, mut po) = proxy_stream.into_split();
+                        tokio::try_join!(io::copy(&mut ci, &mut po), io::copy(&mut pi, &mut co))?;
+                    } else {
+                        // For HTTP, send the request through the tunnel
+                        let mut http_req =
+                            format!("{} {} HTTP/1.1\r\n", request.method, request.target);
+                        for (k, v) in &request.headers {
+                            http_req.push_str(&format!("{}: {}\r\n", k, v));
+                        }
+                        http_req.push_str("\r\n");
+                        proxy_stream.write_all(http_req.as_bytes()).await?;
+                        if !request.body.is_empty() {
+                            proxy_stream.write_all(&request.body).await?;
+                        }
+                        let (mut ci, mut co) = client.into_split();
+                        let (mut pi, mut po) = proxy_stream.into_split();
+                        tokio::try_join!(io::copy(&mut pi, &mut co), io::copy(&mut ci, &mut po))?;
+                    }
+                }
+                Err(e) => {
+                    error!("Could not connect through proxy: {}", e);
+                    client.write_all(http::HTTP_SERVER_ERROR.as_bytes()).await?;
+                }
+            }
         }
         Profile::Http {
             host,
@@ -173,33 +202,23 @@ async fn handle_proxy_connection(
                 http::forward_http_request(request, target_host, port, host, *proxy_port, None)
                     .await
             };
-            handle_proxy_stream(client, proxy_stream).await?;
+            match proxy_stream {
+                Ok(proxy_stream) => {
+                    let (mut ci, mut co) = client.into_split();
+                    let (mut pi, mut po) = proxy_stream.into_split();
+                    tokio::try_join!(io::copy(&mut ci, &mut po), io::copy(&mut pi, &mut co))?;
+                }
+                Err(e) => {
+                    error!("Could not connect through proxy: {}", e);
+                    client.write_all(http::HTTP_SERVER_ERROR.as_bytes()).await?;
+                }
+            }
         }
         _ => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "Invalid proxy type",
             ));
-        }
-    }
-
-    Ok(())
-}
-
-async fn handle_proxy_stream(
-    mut client: tokio::net::TcpStream,
-    proxy_stream_result: io::Result<tokio::net::TcpStream>,
-) -> io::Result<()> {
-    match proxy_stream_result {
-        Ok(proxy_stream) => {
-            // Pipe data between client and proxy
-            let (mut ci, mut co) = client.into_split();
-            let (mut pi, mut po) = proxy_stream.into_split();
-            tokio::try_join!(io::copy(&mut ci, &mut po), io::copy(&mut pi, &mut co))?;
-        }
-        Err(e) => {
-            error!("Could not connect through proxy: {}", e);
-            client.write_all(http::HTTP_SERVER_ERROR.as_bytes()).await?;
         }
     }
 
