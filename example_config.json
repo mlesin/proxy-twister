@@ -1,0 +1,38 @@
+{
+    "switch": {
+        "default": "regular",
+        "rules": [
+            {
+                "pattern": "10.*",
+                "profile": "direct"
+            },
+            {
+                "pattern": "127.0.0.1",
+                "profile": "direct"
+            },
+            {
+                "pattern": "*.discord.gg",
+                "profile": "tor"
+            },
+            {
+                "pattern": "*.discord.com",
+                "profile": "tor"
+            }
+        ]
+    },
+    "profiles": {
+        "direct": {
+            "scheme": "direct"
+        },
+        "regular": {
+            "scheme": "http",
+            "port": 1080,
+            "host": "localhost"
+        },
+        "tor": {
+            "scheme": "socks5",
+            "host": "localhost",
+            "port": 9150
+        }
+    }
+}
