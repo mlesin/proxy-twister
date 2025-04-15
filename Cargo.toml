@@ -3,6 +3,16 @@ name = "proxy-twister"
 version = "1.0.0"
 edition = "2024"
 author = "Mikhail Lesin"
+description = "A flexible HTTP proxy switcher that routes traffic through different proxies (SOCKS5 or HTTP) based on target host patterns."
+license = "Apache-2.0"
+repository = "https://github.com/mlesin/proxy-twister"
+readme = "README.md"
+homepage = "https://github.com/mlesin/proxy-twister"
+documentation = "https://docs.rs/proxy-twister"
+keywords = ["proxy", "http", "socks5", "switcher", "networking"]
+categories = ["network-programming", "command-line-utilities"]
+# Exclude files not needed in the crate package
+exclude = ["target/*", "example_config.json", "config.json"]
 
 [dependencies]
 base64 = "0.22"
