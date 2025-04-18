@@ -2,7 +2,7 @@
 name = "proxy-twister"
 version = "1.0.1"
 edition = "2024"
-author = "Mikhail Lesin"
+authors = ["Mikhail Lesin"]
 description = "A flexible HTTP proxy switcher that routes traffic through different proxies (SOCKS5 or HTTP) based on target host patterns."
 license = "Apache-2.0"
 repository = "https://github.com/mlesin/proxy-twister"
