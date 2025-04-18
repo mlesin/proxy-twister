@@ -1,6 +1,8 @@
 use serde::Deserialize;
 use std::{collections::HashMap, fs};
 
+pub mod watcher;
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {

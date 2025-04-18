@@ -1,13 +1,16 @@
 use clap::Parser;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::{self, AsyncWriteExt};
 use tokio::net::TcpListener;
+use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 
 mod config;
 mod protocols;
 mod utils;
 
+use config::watcher::spawn_config_watcher;
 use config::{Config, Profile};
 use protocols::{http, socks};
 use utils::matches_pattern;
@@ -225,15 +228,19 @@ async fn handle_proxy_connection(
     Ok(())
 }
 
-async fn handle_client(mut client: tokio::net::TcpStream, config: Arc<Config>) -> io::Result<()> {
+async fn handle_client(
+    mut client: tokio::net::TcpStream,
+    config: Arc<RwLock<Config>>,
+) -> io::Result<()> {
     // Parse HTTP proxy request
     let request = http::parse_request(&mut client).await?;
 
     // Extract target host and port from the request
     let (target_host, port) = extract_host_and_port(&mut client, &request).await?;
 
-    // Determine which profile to use based on the switch rules
-    let chosen_profile_name = select_profile(&config, &target_host);
+    // Read config under lock
+    let config_guard = config.read().await;
+    let chosen_profile_name = select_profile(&config_guard, &target_host);
 
     debug!(
         "Target is '{}', using '{}' profile",
@@ -241,7 +248,7 @@ async fn handle_client(mut client: tokio::net::TcpStream, config: Arc<Config>) -
     );
 
     // Handle the connection based on the chosen profile
-    if let Some(proxy) = config.profiles.get(&chosen_profile_name) {
+    if let Some(proxy) = config_guard.profiles.get(&chosen_profile_name) {
         match proxy {
             Profile::Direct => {
                 handle_direct_connection(client, &request, &target_host, port).await?;
@@ -263,8 +270,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     let args = Args::parse();
-
-    let config_path = args.config;
+    let config_path = args.config.clone();
     let config = match Config::load(&config_path) {
         Ok(config) => config,
         Err(e) => {
@@ -272,7 +278,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::process::exit(1);
         }
     };
-    let config = Arc::new(config);
+    let config = Arc::new(RwLock::new(config));
+
+    // Use the new watcher module
+    spawn_config_watcher(PathBuf::from(config_path.clone()), config.clone());
 
     let listener_addr = format!("{}:{}", args.address, args.port);
     let listener = TcpListener::bind(&listener_addr).await?;
@@ -280,7 +289,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         let (client_socket, _addr) = listener.accept().await?;
-        // log::info!("Accepted connection from {}", addr);
         let config_clone = config.clone();
         tokio::spawn(async move {
             if let Err(e) = handle_client(client_socket, config_clone).await {
