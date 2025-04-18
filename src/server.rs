@@ -210,7 +210,6 @@ async fn handle_proxy_connection(
 async fn handle_client(
     mut client: tokio::net::TcpStream,
     config: Arc<RwLock<Config>>,
-    _cancel_token: CancellationToken,
 ) -> tokio::io::Result<()> {
     let request = http::parse_request(&mut client).await?;
     let (target_host, port) = extract_host_and_port(&mut client, &request).await?;
@@ -259,9 +258,8 @@ pub async fn run_listener(
                 match accept_result {
                     Ok((client_socket, _addr)) => {
                         let config = config.clone();
-                        let cancel_token = cancel_token.clone();
                         tokio::spawn(async move {
-                            let _ = handle_client(client_socket, config, cancel_token).await;
+                            let _ = handle_client(client_socket, config).await;
                         });
                     }
                     Err(e) => {
