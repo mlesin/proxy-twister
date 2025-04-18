@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::io::{self, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
 mod config;
@@ -231,6 +232,7 @@ async fn handle_proxy_connection(
 async fn handle_client(
     mut client: tokio::net::TcpStream,
     config: Arc<RwLock<Config>>,
+    _cancel_token: CancellationToken,
 ) -> io::Result<()> {
     // Parse HTTP proxy request
     let request = http::parse_request(&mut client).await?;
@@ -271,29 +273,69 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
     let config_path = args.config.clone();
-    let config = match Config::load(&config_path) {
+    let config = Arc::new(RwLock::new(match Config::load(&config_path) {
         Ok(config) => config,
         Err(e) => {
             eprintln!("Configuration error: {}", e);
             std::process::exit(1);
         }
-    };
-    let config = Arc::new(RwLock::new(config));
+    }));
 
-    // Use the new watcher module
-    spawn_config_watcher(PathBuf::from(config_path.clone()), config.clone());
+    // Use CancellationToken directly
+    let cancel_token = CancellationToken::new();
+    let watcher_token = cancel_token.clone();
+    let watcher_handle = spawn_config_watcher(
+        PathBuf::from(config_path.clone()),
+        config.clone(),
+        watcher_token,
+    );
 
     let listener_addr = format!("{}:{}", args.address, args.port);
     let listener = TcpListener::bind(&listener_addr).await?;
     info!("HTTP proxy switcher listening on {}", listener_addr);
 
-    loop {
-        let (client_socket, _addr) = listener.accept().await?;
-        let config_clone = config.clone();
-        tokio::spawn(async move {
-            if let Err(e) = handle_client(client_socket, config_clone).await {
-                error!("Error handling connection: {:?}", e);
+    let mut join_handles = Vec::new();
+    let listener_token = cancel_token.clone();
+    let listener_handle = tokio::spawn({
+        let cancel_token = cancel_token.clone();
+        async move {
+            loop {
+                tokio::select! {
+                    _ = listener_token.cancelled() => {
+                        info!("Listener received shutdown signal");
+                        break;
+                    }
+                    accept_result = listener.accept() => {
+                        match accept_result {
+                            Ok((client_socket, _addr)) => {
+                                let config_clone = config.clone();
+                                let client_token = cancel_token.clone();
+                                tokio::spawn(async move {
+                                    let _ = handle_client(client_socket, config_clone, client_token).await;
+                                });
+                            }
+                            Err(e) => {
+                                error!("Accept error: {:?}", e);
+                            }
+                        }
+                    }
+                }
             }
-        });
+        }
+    });
+    join_handles.push(listener_handle);
+    join_handles.push(watcher_handle);
+
+    // Wait for Ctrl-C
+    tokio::signal::ctrl_c()
+        .await
+        .expect("Failed to listen for Ctrl-C");
+    info!("Ctrl-C received, shutting down...");
+    cancel_token.cancel();
+
+    // Wait for all tasks to finish
+    for handle in join_handles {
+        let _ = handle.await;
     }
+    Ok(())
 }
