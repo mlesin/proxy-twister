@@ -9,8 +9,21 @@ A flexible HTTP proxy switcher that intelligently routes traffic through differe
 - Direct connection option for local or trusted networks
 - Pattern matching with wildcards for flexible routing rules
 - Handles both HTTP and HTTPS (via CONNECT) connections
+- Hot-reloads configuration file on changes (keeps last valid config on error)
+- Graceful shutdown on Ctrl-C (all tasks terminate cleanly)
+- Listen on multiple addresses simultaneously
 
 ## Installation
+
+### From crates.io (Preferred)
+
+Install the latest release directly from crates.io:
+
+```sh
+cargo install proxy-twister
+```
+
+This will install the `proxy-twister` binary into your Cargo bin directory (usually `~/.cargo/bin`).
 
 ### From Source
 
@@ -103,16 +116,30 @@ Create a configuration file in JSON format. Here's an example:
 Run the program with:
 
 ```shell
-proxy-twister --config config.json [--address 127.0.0.1] [--port 1080]
+proxy-twister --config config.json --listen 127.0.0.1:1080 --listen 127.0.0.1:8080
 ```
 
 Options:
 
 - `--config`: Path to the configuration file (required)
-- `--address`: Address to listen on (default: 127.0.0.1)
-- `--port`: Port to listen on (default: 1080)
+- `--listen`/`-l`: Address to listen on (can be specified multiple times; default: 127.0.0.1:1080)
 
-Then configure your applications to use the proxy at the address and port you specified.
+You can specify multiple `--listen`/`-l` options to listen on several addresses/ports at once. Example:
+
+```shell
+proxy-twister --config config.json -l 127.0.0.1:1080 -l 127.0.0.1:8080
+```
+
+Then configure your applications to use the proxy at any of the addresses and ports you specified.
+
+### Hot Reloading
+
+- The proxy will automatically reload its configuration file when it changes.
+- If the new config is invalid, the last valid config remains active and an error is logged.
+
+### Graceful Shutdown
+
+- Press Ctrl-C to gracefully shut down all listeners and background tasks.
 
 ## Pattern Matching
 
