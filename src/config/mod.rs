@@ -16,7 +16,7 @@ pub struct Switch {
     pub rules: Vec<Rule>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(tag = "scheme", rename_all = "lowercase")]
 pub enum Profile {
     Direct,

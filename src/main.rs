@@ -1,6 +1,6 @@
 use clap::Parser;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -40,21 +40,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }));
 
-    let cancel_token = CancellationToken::new();
-    let watcher_token = cancel_token.clone();
+    // Use a shared holder for the current CancellationToken
+    let connections_token = Arc::new(Mutex::new(CancellationToken::new()));
+    let watcher_token = CancellationToken::new(); // Separate token for graceful shutdown
     let watcher_handle = spawn_config_watcher(
         PathBuf::from(config_path.clone()),
         config.clone(),
-        watcher_token,
+        connections_token.clone(),
+        watcher_token.clone(),
     );
 
     let mut join_handles = vec![watcher_handle];
     for addr in &args.addresses {
         let config = config.clone();
-        let cancel_token = cancel_token.clone();
+        let token = connections_token.clone();
+        let shutdown_token = watcher_token.clone();
         let addr = addr.clone();
         join_handles.push(tokio::spawn(async move {
-            server::run_listener(addr, config, cancel_token).await;
+            server::run_listener(addr, config, token, shutdown_token).await;
         }));
     }
 
@@ -62,7 +65,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .expect("Failed to listen for Ctrl-C");
     info!("Ctrl-C received, shutting down...");
-    cancel_token.cancel();
+
+    // Cancel the watcher first to stop config reloading
+    watcher_token.cancel();
+    // Cancel all connections
+    connections_token.lock().unwrap().cancel();
 
     for handle in join_handles {
         let _ = handle.await;

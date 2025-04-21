@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::protocols::{http, socks};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
@@ -124,7 +124,7 @@ async fn handle_proxy_connection(
             host,
             port: proxy_port,
         } => {
-            info!(
+            debug!(
                 "Using Socks5 proxy {}:{} for {}:{}",
                 host, proxy_port, target_host, port
             );
@@ -172,7 +172,7 @@ async fn handle_proxy_connection(
             host,
             port: proxy_port,
         } => {
-            info!(
+            debug!(
                 "Using HTTP proxy {}:{} for {}:{}",
                 host, proxy_port, target_host, port
             );
@@ -210,35 +210,56 @@ async fn handle_proxy_connection(
 async fn handle_client(
     mut client: tokio::net::TcpStream,
     config: Arc<RwLock<Config>>,
+    cancel_token: CancellationToken,
 ) -> tokio::io::Result<()> {
+    // Check for cancellation before starting
+    if cancel_token.is_cancelled() {
+        return Ok(());
+    }
+
     let request = http::parse_request(&mut client).await?;
     let (target_host, port) = extract_host_and_port(&mut client, &request).await?;
-    let config_guard = config.read().await;
-    let chosen_profile_name = select_profile(&config_guard, &target_host);
-    debug!(
-        "Target is '{}', using '{}' profile",
-        target_host, chosen_profile_name
-    );
-    if let Some(proxy) = config_guard.profiles.get(&chosen_profile_name) {
-        match proxy {
-            crate::config::Profile::Direct => {
-                handle_direct_connection(client, &request, &target_host, port).await?;
+
+    // IMPORTANT: Scope the read lock to ensure it's released as soon as we extract what we need
+    let proxy_config = {
+        let config_guard = config.read().await;
+        let profile_name = select_profile(&config_guard, &target_host);
+        debug!(
+            "Target is '{}', using '{}' profile",
+            target_host, profile_name
+        );
+
+        // Clone what we need from the config to avoid holding the lock
+        let proxy = match config_guard.profiles.get(&profile_name) {
+            Some(p) => p.clone(),
+            None => {
+                error!("Profile {} not found in configuration", profile_name);
+                client.write_all(http::HTTP_SERVER_ERROR.as_bytes()).await?;
+                return Ok(());
             }
-            crate::config::Profile::Socks5 { .. } | crate::config::Profile::Http { .. } => {
-                handle_proxy_connection(client, &request, &target_host, port, proxy).await?;
-            }
+        };
+
+        proxy
+    }; // read lock is released here
+
+    // Process the request with our cloned data, without holding the lock
+    match proxy_config {
+        crate::config::Profile::Direct => {
+            handle_direct_connection(client, &request, &target_host, port).await?;
         }
-    } else {
-        error!("Profile {} not found in configuration", chosen_profile_name);
-        client.write_all(http::HTTP_SERVER_ERROR.as_bytes()).await?;
+        crate::config::Profile::Socks5 { .. } | crate::config::Profile::Http { .. } => {
+            handle_proxy_connection(client, &request, &target_host, port, &proxy_config).await?;
+        }
     }
+
     Ok(())
 }
 
 pub async fn run_listener(
     addr: String,
     config: Arc<RwLock<Config>>,
-    cancel_token: CancellationToken,
+    connections_token: Arc<Mutex<CancellationToken>>,
+    shutdown_token: CancellationToken,
 ) {
     let listener = match TcpListener::bind(&addr).await {
         Ok(l) => l,
@@ -250,7 +271,7 @@ pub async fn run_listener(
     info!("Listening on {}", addr);
     loop {
         tokio::select! {
-            _ = cancel_token.cancelled() => {
+            _ = shutdown_token.cancelled() => {
                 info!("Listener on {} received shutdown signal", addr);
                 break;
             }
@@ -258,8 +279,11 @@ pub async fn run_listener(
                 match accept_result {
                     Ok((client_socket, _addr)) => {
                         let config = config.clone();
+                        let token = connections_token.clone();
                         tokio::spawn(async move {
-                            let _ = handle_client(client_socket, config).await;
+                            // Get the current token for this connection
+                            let current_token = { token.lock().unwrap().clone() };
+                            let _ = handle_client(client_socket, config, current_token).await;
                         });
                     }
                     Err(e) => {

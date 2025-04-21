@@ -1,6 +1,6 @@
 [package]
 name = "proxy-twister"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2024"
 authors = ["Mikhail Lesin"]
 description = "A flexible HTTP proxy switcher that routes traffic through different proxies (SOCKS5 or HTTP) based on target host patterns."
