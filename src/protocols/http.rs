@@ -5,7 +5,7 @@ use std::io;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::time::{Duration, timeout};
-use tracing::{debug, error};
+use tracing::{error, trace};
 
 pub const HTTP_SERVER_ERROR: &str = "500 Internal Server Error\r\n\r\n";
 
@@ -50,7 +50,7 @@ pub async fn parse_request(stream: &mut TcpStream) -> io::Result<HttpRequest> {
 
             if key == "content-length" {
                 content_length = value.parse().unwrap_or_else(|_| {
-                    debug!("Invalid content-length value: {}", value);
+                    trace!("Invalid content-length value: {}", value);
                     0
                 });
             }
@@ -136,14 +136,14 @@ pub async fn forward_to_proxy(
 
     request.push_str("\r\n");
 
-    debug!("Sending request to proxy: {}", request);
+    trace!("Sending request to proxy: {}", request);
     stream.write_all(request.as_bytes()).await?;
 
-    debug!("Waiting for proxy response with timeout");
+    trace!("Waiting for proxy response with timeout");
     let mut reader = BufReader::new(&mut stream);
     let mut response = String::new();
     match timeout(Duration::from_secs(10), reader.read_line(&mut response)).await {
-        Ok(Ok(_)) => debug!("Received proxy response: {}", response.trim()),
+        Ok(Ok(_)) => trace!("Received proxy response: {}", response.trim()),
         Ok(Err(e)) => {
             error!("Failed to read proxy response header: {}", e);
             return Err(e);
@@ -165,7 +165,7 @@ pub async fn forward_to_proxy(
         ));
     }
 
-    debug!("Reading and discarding proxy response headers");
+    trace!("Reading and discarding proxy response headers");
     loop {
         let mut line = String::new();
         match timeout(Duration::from_secs(10), reader.read_line(&mut line)).await {
@@ -173,7 +173,7 @@ pub async fn forward_to_proxy(
                 if line.trim().is_empty() {
                     break;
                 }
-                debug!("Proxy response header: {}", line.trim());
+                trace!("Proxy response header: {}", line.trim());
             }
             Ok(Err(e)) => {
                 error!("Failed to read proxy response headers: {}", e);

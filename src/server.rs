@@ -5,7 +5,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, trace};
 
 fn select_profile(config: &Config, target_host: &str) -> String {
     let mut selected = config.switch.default.clone();
@@ -23,6 +23,12 @@ async fn extract_host_and_port(
     client: &mut tokio::net::TcpStream,
     request: &http::HttpRequest,
 ) -> tokio::io::Result<(String, u16)> {
+    trace!(
+        "extract_host_and_port: method={}, target={}",
+        request.method, request.target
+    );
+    trace!("extract_host_and_port: headers={:?}", request.headers);
+
     if request.method == "CONNECT" {
         return http::handle_connect(client, request.clone()).await;
     }
@@ -32,6 +38,10 @@ async fn extract_host_and_port(
         .cloned()
         .or_else(|| {
             let uri = request.target.clone();
+            trace!(
+                "extract_host_and_port: trying to extract host from URI: {}",
+                uri
+            );
             if let Some(uri) = uri.strip_prefix("http://") {
                 uri.split('/').next().map(|h| h.to_string())
             } else {
@@ -44,6 +54,9 @@ async fn extract_host_and_port(
                 "No host header in request",
             )
         })?;
+
+    trace!("extract_host_and_port: extracted host string: '{}'", host);
+
     let parts: Vec<&str> = host.split(':').collect();
     let host_without_port = parts[0].to_string();
     let port = if parts.len() > 1 {
@@ -51,6 +64,11 @@ async fn extract_host_and_port(
     } else {
         80
     };
+
+    trace!(
+        "extract_host_and_port: final result - host: '{}', port: {}",
+        host_without_port, port
+    );
     Ok((host_without_port, port))
 }
 
@@ -60,9 +78,18 @@ async fn handle_direct_connection(
     target_host: &str,
     port: u16,
 ) -> tokio::io::Result<()> {
+    // trace!("=== DIRECT CONNECTION DEBUG ===");
+    // trace!("Request method: {}", request.method);
+    // trace!("Request target: {}", request.target);
+    // trace!("Target host: '{}'", target_host);
+    // trace!("Target port: {}", port);
+    // trace!("Will attempt to connect to: {}:{}", target_host, port);
+
     if request.method == "CONNECT" {
+        debug!("Attempting direct CONNECT to {}:{}", target_host, port);
         match tokio::net::TcpStream::connect(format!("{}:{}", target_host, port)).await {
             Ok(target_stream) => {
+                debug!("Successfully connected to {}:{}", target_host, port);
                 let (mut ri, mut wi) = client.into_split();
                 let (mut ro, mut wo) = target_stream.into_split();
                 tokio::try_join!(
@@ -71,13 +98,24 @@ async fn handle_direct_connection(
                 )?;
             }
             Err(e) => {
-                error!("Could not connect directly to {}: {}", target_host, e);
+                error!(
+                    "Could not connect directly to {}:{}: {} (error kind: {:?})",
+                    target_host,
+                    port,
+                    e,
+                    e.kind()
+                );
                 client.write_all(http::HTTP_SERVER_ERROR.as_bytes()).await?;
             }
         }
     } else {
+        trace!(
+            "Attempting direct HTTP connection to {}:{}",
+            target_host, port
+        );
         match tokio::net::TcpStream::connect(format!("{}:{}", target_host, port)).await {
             Ok(target_stream) => {
+                trace!("Successfully connected to {}:{}", target_host, port);
                 let mut modified_request = request.clone();
                 if modified_request.target.starts_with("http://") {
                     modified_request.target = modified_request
@@ -104,7 +142,13 @@ async fn handle_direct_connection(
                 )?;
             }
             Err(e) => {
-                error!("Could not connect directly to {}: {}", target_host, e);
+                error!(
+                    "Could not connect directly to {}:{}: {} (error kind: {:?})",
+                    target_host,
+                    port,
+                    e,
+                    e.kind()
+                );
                 client.write_all(http::HTTP_SERVER_ERROR.as_bytes()).await?;
             }
         }
@@ -124,7 +168,7 @@ async fn handle_proxy_connection(
             host,
             port: proxy_port,
         } => {
-            debug!(
+            trace!(
                 "Using Socks5 proxy {}:{} for {}:{}",
                 host, proxy_port, target_host, port
             );
@@ -219,6 +263,11 @@ async fn handle_client(
 
     let request = http::parse_request(&mut client).await?;
     let (target_host, port) = extract_host_and_port(&mut client, &request).await?;
+
+    trace!(
+        "Extracted target_host: '{}', port: {}, method: '{}'",
+        target_host, port, request.method
+    );
 
     // IMPORTANT: Scope the read lock to ensure it's released as soon as we extract what we need
     let proxy_config = {
