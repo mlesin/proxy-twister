@@ -159,10 +159,10 @@ pub async fn forward_to_proxy(
 
     if !response.starts_with("HTTP/1.1 200") && !response.starts_with("HTTP/1.0 200") {
         error!("Proxy connection failed: {}", response.trim());
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Proxy connection failed: {}", response.trim()),
-        ));
+        return Err(io::Error::other(format!(
+            "Proxy connection failed: {}",
+            response.trim()
+        )));
     }
 
     trace!("Reading and discarding proxy response headers");

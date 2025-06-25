@@ -36,10 +36,7 @@ pub async fn forward_to_proxy(
 
     if response[0] != SOCKS_VERSION || response[1] != NO_AUTHENTICATION {
         error!("Proxy authentication failed: {:?}", response);
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            "Proxy authentication failed",
-        ));
+        return Err(io::Error::other("Proxy authentication failed"));
     }
 
     proxy.write_all(&[SOCKS_VERSION]).await?;
@@ -80,13 +77,10 @@ pub async fn forward_to_proxy(
             "Proxy connection failed with status: {}",
             response_header[1]
         );
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!(
-                "Proxy connection failed with status: {}",
-                response_header[1]
-            ),
-        ));
+        return Err(io::Error::other(format!(
+            "Proxy connection failed with status: {}",
+            response_header[1]
+        )));
     }
 
     trace!("Processing proxy response address type");

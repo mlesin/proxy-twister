@@ -114,7 +114,7 @@ async fn handle_direct_connection(
             target_host, port
         );
         match tokio::net::TcpStream::connect(format!("{}:{}", target_host, port)).await {
-            Ok(target_stream) => {
+            Ok(_target_stream) => {
                 trace!("Successfully connected to {}:{}", target_host, port);
                 let mut modified_request = request.clone();
                 if modified_request.target.starts_with("http://") {
@@ -125,7 +125,9 @@ async fn handle_direct_connection(
                         .map(|p| format!("/{}", p))
                         .unwrap_or_else(|| "/".to_string());
                 }
-                http::forward_http_request(
+
+                // Send modified request to target
+                let target_stream = http::forward_http_request(
                     &modified_request,
                     target_host,
                     port,
@@ -134,12 +136,15 @@ async fn handle_direct_connection(
                     None,
                 )
                 .await?;
-                let (mut ri, mut wi) = client.into_split();
-                let (mut ro, mut wo) = target_stream.into_split();
-                tokio::try_join!(
-                    tokio::io::copy(&mut ro, &mut wi),
-                    tokio::io::copy(&mut ri, &mut wo)
-                )?;
+
+                // Forward the complete response back to client
+                let (mut client_read, mut client_write) = client.into_split();
+                let (mut target_read, mut target_write) = target_stream.into_split();
+
+                // First copy response from target to client
+                tokio::io::copy(&mut target_read, &mut client_write).await?;
+                // Then copy any remaining data from client to target
+                tokio::io::copy(&mut client_read, &mut target_write).await?;
             }
             Err(e) => {
                 error!(
@@ -279,16 +284,15 @@ async fn handle_client(
         );
 
         // Clone what we need from the config to avoid holding the lock
-        let proxy = match config_guard.profiles.get(&profile_name) {
+
+        match config_guard.profiles.get(&profile_name) {
             Some(p) => p.clone(),
             None => {
                 error!("Profile {} not found in configuration", profile_name);
                 client.write_all(http::HTTP_SERVER_ERROR.as_bytes()).await?;
                 return Ok(());
             }
-        };
-
-        proxy
+        }
     }; // read lock is released here
 
     // Process the request with our cloned data, without holding the lock
