@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.2] - 2025-06-25
+
+### 🐛 Bug Fixes
+
+- Http traffic via direct route
+
+### ⚙️ Miscellaneous Tasks
+
+- Update dependencies and improve logging levels in HTTP and SOCKS protocols
+
 ## [1.1.1] - 2025-04-21
 
 ### 🚀 Features
