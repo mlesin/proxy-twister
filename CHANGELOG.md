@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.3] - 2025-06-25
+
+### 🐛 Bug Fixes
+
+- HTTP direct connection handling with proper request forwarding and timeouts
+
 ## [1.1.2] - 2025-06-25
 
 ### 🐛 Bug Fixes
