@@ -20,7 +20,16 @@ pub struct HttpRequest {
 pub async fn parse_request(stream: &mut TcpStream) -> io::Result<HttpRequest> {
     let mut reader = BufReader::new(stream);
     let mut first_line = String::new();
-    reader.read_line(&mut first_line).await?;
+    
+    // Add timeout for reading the first line to prevent hanging
+    match timeout(Duration::from_secs(30), reader.read_line(&mut first_line)).await {
+        Ok(Ok(_)) => {},
+        Ok(Err(e)) => return Err(e),
+        Err(_) => return Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "Timeout reading HTTP request line"
+        )),
+    }
 
     let parts: Vec<&str> = first_line.split_whitespace().collect();
     if parts.len() != 3 {
@@ -35,10 +44,17 @@ pub async fn parse_request(stream: &mut TcpStream) -> io::Result<HttpRequest> {
     let mut headers = HashMap::new();
     let mut content_length = 0;
 
-    // Read headers
+    // Read headers with timeout
     loop {
         let mut line = String::new();
-        reader.read_line(&mut line).await?;
+        match timeout(Duration::from_secs(30), reader.read_line(&mut line)).await {
+            Ok(Ok(_)) => {},
+            Ok(Err(e)) => return Err(e),
+            Err(_) => return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "Timeout reading HTTP headers"
+            )),
+        }
 
         if line.trim().is_empty() {
             break;
@@ -59,12 +75,18 @@ pub async fn parse_request(stream: &mut TcpStream) -> io::Result<HttpRequest> {
         }
     }
 
-    // Read body if present
+    // Read body if present with timeout
     let mut body = Vec::new();
     if content_length > 0 {
         let mut buffer = vec![0u8; content_length];
-        reader.read_exact(&mut buffer).await?;
-        body = buffer;
+        match timeout(Duration::from_secs(30), reader.read_exact(&mut buffer)).await {
+            Ok(Ok(_)) => body = buffer,
+            Ok(Err(e)) => return Err(e),
+            Err(_) => return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "Timeout reading HTTP body"
+            )),
+        }
     }
 
     Ok(HttpRequest {
