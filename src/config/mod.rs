@@ -35,7 +35,7 @@ impl Config {
         let contents = fs::read_to_string(path)
             .map_err(|e| format!("Failed to read configuration file '{}': {}", path, e))?;
 
-        serde_json::from_str(&contents)
+        json5::from_str(&contents)
             .map_err(|e| format!("Failed to parse configuration file '{}': {}", path, e))
     }
 }
