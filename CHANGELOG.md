@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.4] - 2025-06-27
+
+### 🚀 Features
+
+- Switch JSON parsing to json5 for improved flexibility
+
 ## [1.1.3] - 2025-06-25
 
 ### 🐛 Bug Fixes
