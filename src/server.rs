@@ -326,7 +326,10 @@ async fn handle_proxy_connection(
                     }
                 }
                 Err(e) => {
-                    error!("Could not connect through proxy: {}", e);
+                    error!(
+                        "Could not connect through proxy to {}:{} : {}",
+                        target_host, port, e
+                    );
                     client.write_all(http::HTTP_SERVER_ERROR.as_bytes()).await?;
                 }
             }
@@ -355,7 +358,10 @@ async fn handle_proxy_connection(
                     )?;
                 }
                 Err(e) => {
-                    error!("Could not connect through proxy: {}", e);
+                    error!(
+                        "Could not connect through proxy to {}:{} : {}",
+                        target_host, port, e
+                    );
                     client.write_all(http::HTTP_SERVER_ERROR.as_bytes()).await?;
                 }
             }
