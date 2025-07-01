@@ -24,7 +24,7 @@ pub async fn forward_to_proxy(
     proxy_port: u16,
 ) -> io::Result<TcpStream> {
     trace!("Connecting to proxy at {}:{}", proxy_host, proxy_port);
-    let mut proxy = TcpStream::connect(format!("{}:{}", proxy_host, proxy_port)).await?;
+    let mut proxy = TcpStream::connect(format!("{proxy_host}:{proxy_port}")).await?;
 
     proxy
         .write_all(&[SOCKS_VERSION, 1, NO_AUTHENTICATION])

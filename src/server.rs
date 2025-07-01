@@ -80,7 +80,7 @@ async fn handle_direct_connection(
 ) -> tokio::io::Result<()> {
     if request.method == "CONNECT" {
         debug!("Attempting direct CONNECT to {}:{}", target_host, port);
-        match tokio::net::TcpStream::connect(format!("{}:{}", target_host, port)).await {
+        match tokio::net::TcpStream::connect(format!("{target_host}:{port}")).await {
             Ok(target_stream) => {
                 debug!("Successfully connected to {}:{}", target_host, port);
 
@@ -112,7 +112,7 @@ async fn handle_direct_connection(
             "Attempting direct HTTP connection to {}:{}",
             target_host, port
         );
-        match tokio::net::TcpStream::connect(format!("{}:{}", target_host, port)).await {
+        match tokio::net::TcpStream::connect(format!("{target_host}:{port}")).await {
             Ok(mut target_stream) => {
                 trace!("Successfully connected to {}:{}", target_host, port);
 
@@ -179,16 +179,16 @@ async fn handle_direct_connection(
                     }
                     // Skip proxy-specific headers for direct connections
                     if !key_lower.starts_with("proxy-") {
-                        http_request.push_str(&format!("{}: {}\r\n", key, value));
+                        http_request.push_str(&format!("{key}: {value}\r\n"));
                     }
                 }
 
                 // Ensure Host header is present
                 if !has_host_header {
                     if port == 80 {
-                        http_request.push_str(&format!("Host: {}\r\n", target_host));
+                        http_request.push_str(&format!("Host: {target_host}\r\n"));
                     } else {
-                        http_request.push_str(&format!("Host: {}:{}\r\n", target_host, port));
+                        http_request.push_str(&format!("Host: {target_host}:{port}\r\n"));
                     }
                 }
 
@@ -310,7 +310,7 @@ async fn handle_proxy_connection(
                         let mut http_req =
                             format!("{} {} HTTP/1.1\r\n", request.method, request.target);
                         for (k, v) in &request.headers {
-                            http_req.push_str(&format!("{}: {}\r\n", k, v));
+                            http_req.push_str(&format!("{k}: {v}\r\n"));
                         }
                         http_req.push_str("\r\n");
                         proxy_stream.write_all(http_req.as_bytes()).await?;

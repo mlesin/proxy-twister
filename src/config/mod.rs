@@ -33,9 +33,9 @@ pub struct Rule {
 impl Config {
     pub fn load(path: &str) -> Result<Self, String> {
         let contents = fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read configuration file '{}': {}", path, e))?;
+            .map_err(|e| format!("Failed to read configuration file '{path}': {e}"))?;
 
         json5::from_str(&contents)
-            .map_err(|e| format!("Failed to parse configuration file '{}': {}", path, e))
+            .map_err(|e| format!("Failed to parse configuration file '{path}': {e}"))
     }
 }

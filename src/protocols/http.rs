@@ -20,15 +20,17 @@ pub struct HttpRequest {
 pub async fn parse_request(stream: &mut TcpStream) -> io::Result<HttpRequest> {
     let mut reader = BufReader::new(stream);
     let mut first_line = String::new();
-    
+
     // Add timeout for reading the first line to prevent hanging
     match timeout(Duration::from_secs(30), reader.read_line(&mut first_line)).await {
-        Ok(Ok(_)) => {},
+        Ok(Ok(_)) => {}
         Ok(Err(e)) => return Err(e),
-        Err(_) => return Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            "Timeout reading HTTP request line"
-        )),
+        Err(_) => {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "Timeout reading HTTP request line",
+            ));
+        }
     }
 
     let parts: Vec<&str> = first_line.split_whitespace().collect();
@@ -48,12 +50,14 @@ pub async fn parse_request(stream: &mut TcpStream) -> io::Result<HttpRequest> {
     loop {
         let mut line = String::new();
         match timeout(Duration::from_secs(30), reader.read_line(&mut line)).await {
-            Ok(Ok(_)) => {},
+            Ok(Ok(_)) => {}
             Ok(Err(e)) => return Err(e),
-            Err(_) => return Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "Timeout reading HTTP headers"
-            )),
+            Err(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "Timeout reading HTTP headers",
+                ));
+            }
         }
 
         if line.trim().is_empty() {
@@ -82,10 +86,12 @@ pub async fn parse_request(stream: &mut TcpStream) -> io::Result<HttpRequest> {
         match timeout(Duration::from_secs(30), reader.read_exact(&mut buffer)).await {
             Ok(Ok(_)) => body = buffer,
             Ok(Err(e)) => return Err(e),
-            Err(_) => return Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "Timeout reading HTTP body"
-            )),
+            Err(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "Timeout reading HTTP body",
+                ));
+            }
         }
     }
 
@@ -141,19 +147,18 @@ pub async fn forward_to_proxy(
     proxy_port: u16,
     auth: Option<(&str, &str)>,
 ) -> io::Result<TcpStream> {
-    let mut stream = TcpStream::connect(format!("{}:{}", proxy_host, proxy_port)).await?;
+    let mut stream = TcpStream::connect(format!("{proxy_host}:{proxy_port}")).await?;
 
     let mut request = format!(
-        "CONNECT {}:{} HTTP/1.1\r\n\
-         Host: {}:{}\r\n",
-        target_host, target_port, target_host, target_port
+        "CONNECT {target_host}:{target_port} HTTP/1.1\r\n\
+         Host: {target_host}:{target_port}\r\n"
     );
 
     // Add Proxy-Authorization if credentials are provided
     if let Some((username, password)) = auth {
-        let auth_string = format!("{}:{}", username, password);
+        let auth_string = format!("{username}:{password}");
         let encoded = BASE64.encode(auth_string);
-        request.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
+        request.push_str(&format!("Proxy-Authorization: Basic {encoded}\r\n"));
     }
 
     request.push_str("\r\n");
@@ -222,7 +227,7 @@ pub async fn forward_http_request(
     proxy_port: u16,
     auth: Option<(&str, &str)>,
 ) -> io::Result<TcpStream> {
-    let mut stream = TcpStream::connect(format!("{}:{}", proxy_host, proxy_port)).await?;
+    let mut stream = TcpStream::connect(format!("{proxy_host}:{proxy_port}")).await?;
 
     // For HTTP proxy, modify the request
     let mut modified_request = format!("{} {} HTTP/1.1\r\n", request.method, request.target);
@@ -230,20 +235,20 @@ pub async fn forward_http_request(
     // Copy original headers
     for (key, value) in &request.headers {
         if key != "proxy-connection" {
-            modified_request.push_str(&format!("{}: {}\r\n", key, value));
+            modified_request.push_str(&format!("{key}: {value}\r\n"));
         }
     }
 
     // Add proxy auth if provided
     if let Some((username, password)) = auth {
-        let auth_string = format!("{}:{}", username, password);
+        let auth_string = format!("{username}:{password}");
         let encoded = BASE64.encode(auth_string);
-        modified_request.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
+        modified_request.push_str(&format!("Proxy-Authorization: Basic {encoded}\r\n"));
     }
 
     // Ensure host header is present
     if !request.headers.contains_key("host") {
-        modified_request.push_str(&format!("Host: {}:{}\r\n", target_host, target_port));
+        modified_request.push_str(&format!("Host: {target_host}:{target_port}\r\n"));
     }
 
     // Add content length if body present

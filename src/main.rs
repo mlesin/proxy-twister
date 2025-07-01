@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Arc::new(RwLock::new(match Config::load(&config_path) {
         Ok(config) => config,
         Err(e) => {
-            eprintln!("Configuration error: {}", e);
+            eprintln!("Configuration error: {e}");
             std::process::exit(1);
         }
     }));
