@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.5] - 2025-07-01
+
+### 🚀 Features
+
+- More verbose error messages
+
+### 🚜 Refactor
+
+- Simplify string formatting in configuration and HTTP handling
+
 ## [1.1.4] - 2025-06-27
 
 ### 🚀 Features
