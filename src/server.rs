@@ -61,7 +61,15 @@ async fn extract_host_and_port(
     let port = if parts.len() > 1 {
         parts[1].parse().unwrap_or(80)
     } else {
-        80
+        // Use the url crate to parse the scheme and determine the default port
+        match url::Url::parse(&request.target) {
+            Ok(url) => match url.scheme().to_ascii_lowercase().as_str() {
+                "https" => 443,
+                "http" => 80,
+                _ => 80,
+            },
+            Err(_) => 80,
+        }
     };
 
     trace!(
@@ -184,6 +192,11 @@ async fn handle_proxy_connection(
             match proxy_stream_result {
                 Ok(mut proxy_stream) => {
                     if request.method == "CONNECT" {
+                        // Send 200 Connection Established to the client for CONNECT requests
+                        client
+                            .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                            .await?;
+
                         let (mut ci, mut co) = client.into_split();
                         let (mut pi, mut po) = proxy_stream.into_split();
                         tokio::try_join!(
@@ -234,6 +247,13 @@ async fn handle_proxy_connection(
             };
             match proxy_stream {
                 Ok(proxy_stream) => {
+                    if request.method == "CONNECT" {
+                        // Send 200 Connection Established to the client for CONNECT requests
+                        client
+                            .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                            .await?;
+                    }
+
                     let (mut ci, mut co) = client.into_split();
                     let (mut pi, mut po) = proxy_stream.into_split();
                     tokio::try_join!(

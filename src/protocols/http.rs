@@ -3,7 +3,8 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::{Method, Request, StatusCode, Uri};
-use hyper_util::client::legacy::{Client, connect::HttpConnector};
+use hyper_rustls::HttpsConnectorBuilder;
+use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use std::collections::HashMap;
 use std::io;
@@ -138,10 +139,6 @@ pub async fn handle_connect(
     let port = target_parts[1]
         .parse::<u16>()
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid port number"))?;
-
-    stream
-        .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-        .await?;
 
     Ok((host, port))
 }
@@ -281,7 +278,7 @@ pub async fn send_http_request(
     target_host: &str,
     port: u16,
 ) -> io::Result<(StatusCode, HashMap<String, String>, Bytes)> {
-    // Create the URI
+    // Create the URI - use HTTPS for port 443 or if request target starts with https://
     let uri_string =
         if request.target.starts_with("http://") || request.target.starts_with("https://") {
             request.target.clone()
@@ -291,7 +288,9 @@ pub async fn send_http_request(
             } else {
                 format!("/{}", request.target)
             };
-            format!("http://{target_host}:{port}{path}")
+            // Use HTTPS for port 443, HTTP for other ports
+            let scheme = if port == 443 { "https" } else { "http" };
+            format!("{scheme}://{target_host}:{port}{path}")
         };
 
     let uri = Uri::from_str(&uri_string)
@@ -326,9 +325,14 @@ pub async fn send_http_request(
         )
     })?;
 
-    // Create a hyper client
-    let connector = HttpConnector::new();
-    let client = Client::builder(TokioExecutor::new()).build::<_, Full<Bytes>>(connector);
+    // Create a hyper client with HTTPS support
+    let https_connector = HttpsConnectorBuilder::new()
+        .with_native_roots()
+        .map_err(|e| io::Error::other(format!("Failed to load native roots: {e}")))?
+        .https_or_http()
+        .enable_http1()
+        .build();
+    let client = Client::builder(TokioExecutor::new()).build::<_, Full<Bytes>>(https_connector);
 
     // Send the request
     trace!("Sending HTTP request to {target_host}:{port}");
