@@ -16,12 +16,16 @@ exclude = ["target/*", "example_config.json", "config.json"]
 
 [dependencies]
 base64 = "0.22"
+bytes = "1"
 clap = { version = "4", features = ["derive"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["fmt"] }
+http-body-util = "0.1"
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+json5 = "0.4"
+notify = "8"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
-json5 = "0.4"
 tokio = { version = "1", features = ["full"] }
-notify = "8.0.0"
-tokio-util = "0.7.14"
+tokio-util = "0.7"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt"] }

@@ -89,6 +89,11 @@ async fn handle_direct_connection(
                     trace!("Failed to set TCP_NODELAY on target stream: {}", e);
                 }
 
+                // Send 200 Connection Established to the client
+                client
+                    .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                    .await?;
+
                 let (mut ri, mut wi) = client.into_split();
                 let (mut ro, mut wo) = target_stream.into_split();
                 tokio::try_join!(
@@ -109,166 +114,46 @@ async fn handle_direct_connection(
         }
     } else {
         trace!(
-            "Attempting direct HTTP connection to {}:{}",
+            "Attempting direct HTTP connection to {}:{} using hyper",
             target_host, port
         );
-        match tokio::net::TcpStream::connect(format!("{target_host}:{port}")).await {
-            Ok(mut target_stream) => {
-                trace!("Successfully connected to {}:{}", target_host, port);
 
-                // Set socket options for better performance and stability
-                if let Err(e) = target_stream.set_nodelay(true) {
-                    trace!("Failed to set TCP_NODELAY on target stream: {}", e);
-                }
-
-                // Prepare the HTTP request for direct forwarding
-                let mut modified_request = request.clone();
-
-                // For direct connections, we need to convert absolute URLs to relative paths
-                if modified_request.target.starts_with("http://") {
-                    // Extract the path part from the full URL
-                    if let Some(url_without_scheme) =
-                        modified_request.target.strip_prefix("http://")
-                    {
-                        if let Some(slash_pos) = url_without_scheme.find('/') {
-                            modified_request.target = url_without_scheme[slash_pos..].to_string();
-                        } else {
-                            modified_request.target = "/".to_string();
-                        }
-                    } else {
-                        // Fallback if strip_prefix fails for some reason
-                        modified_request.target = "/".to_string();
-                    }
-                } else if modified_request.target.starts_with("https://") {
-                    // Handle HTTPS URLs (though they should typically use CONNECT)
-                    if let Some(url_without_scheme) =
-                        modified_request.target.strip_prefix("https://")
-                    {
-                        if let Some(slash_pos) = url_without_scheme.find('/') {
-                            modified_request.target = url_without_scheme[slash_pos..].to_string();
-                        } else {
-                            modified_request.target = "/".to_string();
-                        }
-                    } else {
-                        modified_request.target = "/".to_string();
-                    }
-                }
-
-                // Ensure the target starts with '/' for proper HTTP request format
-                if !modified_request.target.starts_with('/') {
-                    modified_request.target = format!("/{}", modified_request.target);
-                }
-
-                // Build the HTTP request string - preserve original HTTP version if possible
-                let http_version = "HTTP/1.1";
-                let mut http_request = format!(
-                    "{} {} {}\r\n",
-                    modified_request.method, modified_request.target, http_version
+        // Use our helper function to send the HTTP request
+        match http::send_http_request(request, target_host, port).await {
+            Ok((status, headers, body_bytes)) => {
+                trace!(
+                    "Received response from {}:{}: {:?}",
+                    target_host, port, status
                 );
 
-                // Add headers, ensuring Host header is present
-                let mut has_host_header = false;
-                let mut has_connection_header = false;
-                for (key, value) in &modified_request.headers {
-                    let key_lower = key.to_lowercase();
-                    if key_lower == "host" {
-                        has_host_header = true;
-                    }
-                    if key_lower == "connection" {
-                        has_connection_header = true;
-                    }
-                    // Skip proxy-specific headers for direct connections
-                    if !key_lower.starts_with("proxy-") {
-                        http_request.push_str(&format!("{key}: {value}\r\n"));
-                    }
+                // Convert to HTTP/1.1 response string
+                let status_code = status.as_u16();
+                let reason = status.canonical_reason().unwrap_or("");
+
+                let mut response_string = format!("HTTP/1.1 {status_code} {reason}\r\n");
+
+                // Add response headers
+                for (name, value) in headers {
+                    response_string.push_str(&format!("{name}: {value}\r\n"));
                 }
 
-                // Ensure Host header is present
-                if !has_host_header {
-                    if port == 80 {
-                        http_request.push_str(&format!("Host: {target_host}\r\n"));
-                    } else {
-                        http_request.push_str(&format!("Host: {target_host}:{port}\r\n"));
-                    }
+                // End headers section
+                response_string.push_str("\r\n");
+
+                // Write response headers to client
+                client.write_all(response_string.as_bytes()).await?;
+
+                // Write response body to client
+                if !body_bytes.is_empty() {
+                    client.write_all(&body_bytes).await?;
                 }
 
-                // For HTTP/1.1, ensure proper connection handling
-                if !has_connection_header {
-                    http_request.push_str("Connection: close\r\n");
-                }
-
-                // Add Content-Length if body is present
-                if !modified_request.body.is_empty() {
-                    http_request.push_str(&format!(
-                        "Content-Length: {}\r\n",
-                        modified_request.body.len()
-                    ));
-                }
-
-                // End headers
-                http_request.push_str("\r\n");
-
-                // Send the HTTP request to the target server
-                if let Err(e) = target_stream.write_all(http_request.as_bytes()).await {
-                    error!(
-                        "Failed to send HTTP request to {}:{}: {}",
-                        target_host, port, e
-                    );
-                    return Err(e);
-                }
-
-                // Send body if present
-                if !modified_request.body.is_empty() {
-                    if let Err(e) = target_stream.write_all(&modified_request.body).await {
-                        error!(
-                            "Failed to send HTTP body to {}:{}: {}",
-                            target_host, port, e
-                        );
-                        return Err(e);
-                    }
-                }
-
-                // Flush the target stream to ensure data is sent
-                if let Err(e) = target_stream.flush().await {
-                    error!(
-                        "Failed to flush target stream for {}:{}: {}",
-                        target_host, port, e
-                    );
-                    return Err(e);
-                }
-
-                trace!("HTTP request sent successfully to {}:{}", target_host, port);
-
-                // Now set up bidirectional forwarding
-                let (mut client_read, mut client_write) = client.into_split();
-                let (mut target_read, mut target_write) = target_stream.into_split();
-
-                // Forward data in both directions concurrently
-                match tokio::try_join!(
-                    tokio::io::copy(&mut target_read, &mut client_write),
-                    tokio::io::copy(&mut client_read, &mut target_write)
-                ) {
-                    Ok((bytes_to_client, bytes_to_target)) => {
-                        trace!(
-                            "Direct HTTP connection completed: {} bytes to client, {} bytes to target",
-                            bytes_to_client, bytes_to_target
-                        );
-                    }
-                    Err(e) => {
-                        trace!("Direct HTTP connection ended with error: {}", e);
-                        return Err(e);
-                    }
-                }
+                trace!("HTTP response sent successfully to client");
             }
             Err(e) => {
-                error!(
-                    "Could not connect directly to {}:{}: {} (error kind: {:?})",
-                    target_host,
-                    port,
-                    e,
-                    e.kind()
-                );
+                error!("Failed to send request to {}:{}: {}", target_host, port, e);
                 client.write_all(http::HTTP_SERVER_ERROR.as_bytes()).await?;
+                return Err(std::io::Error::other(e.to_string()));
             }
         }
     }

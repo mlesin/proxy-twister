@@ -1,13 +1,19 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full};
+use hyper::{Method, Request, StatusCode, Uri};
+use hyper_util::client::legacy::{Client, connect::HttpConnector};
+use hyper_util::rt::TokioExecutor;
 use std::collections::HashMap;
 use std::io;
+use std::str::FromStr;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::time::{Duration, timeout};
 use tracing::{error, trace};
 
-pub const HTTP_SERVER_ERROR: &str = "500 Internal Server Error\r\n\r\n";
+pub const HTTP_SERVER_ERROR: &str = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
 
 #[derive(Clone)]
 pub struct HttpRequest {
@@ -267,4 +273,87 @@ pub async fn forward_http_request(
     }
 
     Ok(stream)
+}
+
+// Helper function to send HTTP requests using hyper
+pub async fn send_http_request(
+    request: &HttpRequest,
+    target_host: &str,
+    port: u16,
+) -> io::Result<(StatusCode, HashMap<String, String>, Bytes)> {
+    // Create the URI
+    let uri_string =
+        if request.target.starts_with("http://") || request.target.starts_with("https://") {
+            request.target.clone()
+        } else {
+            let path = if request.target.starts_with('/') {
+                request.target.clone()
+            } else {
+                format!("/{}", request.target)
+            };
+            format!("http://{target_host}:{port}{path}")
+        };
+
+    let uri = Uri::from_str(&uri_string)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, format!("Invalid URI: {e}")))?;
+
+    // Create the request method
+    let method = Method::from_str(&request.method).unwrap_or(Method::GET);
+
+    // Build the request
+    let mut req_builder = Request::builder().method(method).uri(uri);
+
+    // Add all headers
+    for (name, value) in &request.headers {
+        if !name.starts_with("proxy-") {
+            req_builder = req_builder.header(name, value);
+        }
+    }
+
+    // Ensure host header is present
+    if !request.headers.contains_key("host") {
+        req_builder = req_builder.header("host", format!("{target_host}:{port}"));
+    }
+
+    // Create the request body
+    let body = Full::new(Bytes::from(request.body.clone()));
+
+    // Build the final request
+    let req = req_builder.body(body).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("Failed to build request: {e}"),
+        )
+    })?;
+
+    // Create a hyper client
+    let connector = HttpConnector::new();
+    let client = Client::builder(TokioExecutor::new()).build::<_, Full<Bytes>>(connector);
+
+    // Send the request
+    trace!("Sending HTTP request to {target_host}:{port}");
+    let res = client
+        .request(req)
+        .await
+        .map_err(|e| io::Error::other(format!("Failed to send request: {e}")))?;
+
+    // Extract the status code
+    let status = res.status();
+
+    // Extract the headers
+    let mut headers = HashMap::new();
+    for (name, value) in res.headers() {
+        if let Ok(value_str) = value.to_str() {
+            headers.insert(name.to_string(), value_str.to_string());
+        }
+    }
+
+    // Collect the body
+    let body_bytes = res
+        .collect()
+        .await
+        .map_err(|e| io::Error::other(format!("Failed to collect response body: {e}")))?
+        .to_bytes();
+
+    Ok((status, headers, body_bytes))
 }
