@@ -24,10 +24,9 @@ async fn extract_host_and_port(
     request: &http::HttpRequest,
 ) -> tokio::io::Result<(String, u16)> {
     trace!(
-        "extract_host_and_port: method={}, target={}",
-        request.method, request.target
+        "extract_host_and_port: method={}, target={}, headers={:?}",
+        request.method, request.target, request.headers
     );
-    trace!("extract_host_and_port: headers={:?}", request.headers);
 
     if request.method == "CONNECT" {
         return http::handle_connect(client, request.clone()).await;
@@ -79,10 +78,10 @@ async fn handle_direct_connection(
     port: u16,
 ) -> tokio::io::Result<()> {
     if request.method == "CONNECT" {
-        debug!("Attempting direct CONNECT to {}:{}", target_host, port);
+        trace!("Attempting direct CONNECT to {}:{}", target_host, port);
         match tokio::net::TcpStream::connect(format!("{target_host}:{port}")).await {
             Ok(target_stream) => {
-                debug!("Successfully connected to {}:{}", target_host, port);
+                trace!("Successfully connected to {}:{}", target_host, port);
 
                 // Set socket options for better performance
                 if let Err(e) = target_stream.set_nodelay(true) {
@@ -223,7 +222,7 @@ async fn handle_proxy_connection(
             host,
             port: proxy_port,
         } => {
-            debug!(
+            trace!(
                 "Using HTTP proxy {}:{} for {}:{}",
                 host, proxy_port, target_host, port
             );
