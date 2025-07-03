@@ -2,11 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.7] - 2025-07-03
+
+### 🐛 Bug Fixes
+
+- Incorrect handling https in direct routes
+
 ## [1.1.6] - 2025-07-03
 
 ### 🚀 Features
 
 - Integrate hyper for HTTP request handling and improve connection management
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Bump version to 1.1.6 and update changelog
 
 ## [1.1.5] - 2025-07-01
 
