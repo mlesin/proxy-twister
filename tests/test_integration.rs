@@ -56,7 +56,7 @@ async fn test_proxy_switcher_integration() -> Result<(), Box<dyn std::error::Err
         });
 
         // Test GET request through HTTP proxy
-        let url = format!("{}/get", env.http_url());
+        let url = format!("{}/get", env.http_docker_url());
         let response = test_http_get(&client, &url).await?;
         assert_eq!(response.status(), 200);
 
@@ -67,7 +67,7 @@ async fn test_proxy_switcher_integration() -> Result<(), Box<dyn std::error::Err
         );
 
         // Test POST request through HTTP proxy
-        let url = format!("{}/post", env.http_url());
+        let url = format!("{}/post", env.http_docker_url());
         let response = test_http_post(&client, &url, &test_payload).await?;
         assert_eq!(response.status(), 200);
 
@@ -92,7 +92,7 @@ async fn test_proxy_switcher_integration() -> Result<(), Box<dyn std::error::Err
         });
 
         // Test GET request through SOCKS5 proxy
-        let url = format!("{}/get", env.http_url());
+        let url = format!("{}/get", env.http_docker_url());
         let response = test_http_get(&client, &url).await?;
         assert_eq!(response.status(), 200);
 
@@ -103,7 +103,7 @@ async fn test_proxy_switcher_integration() -> Result<(), Box<dyn std::error::Err
         );
 
         // Test POST request through SOCKS5 proxy
-        let url = format!("{}/post", env.http_url());
+        let url = format!("{}/post", env.http_docker_url());
         let response = test_http_post(&client, &url, &test_payload).await?;
         assert_eq!(response.status(), 200);
 

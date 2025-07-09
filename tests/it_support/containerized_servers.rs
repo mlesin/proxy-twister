@@ -1,4 +1,6 @@
-use crate::it_support::docker_support::{self, RunningContainer, get_docker_host_address};
+use crate::it_support::docker_support::{
+    self, RunningContainer, get_docker_host_address, get_host_accessible_address,
+};
 use std::time::Duration;
 use testcontainers::{
     GenericImage,
@@ -47,7 +49,20 @@ impl HttpEchoServer {
 
 impl TestServer for HttpEchoServer {
     fn url(&self) -> String {
-        // For access from Docker containers
+        // For tests running on the host machine, use localhost address for port mapping
+        let host_address = get_host_accessible_address();
+        format!(
+            "http://{host_address}:{host_port}",
+            host_address = host_address,
+            host_port = self.port
+        )
+    }
+}
+
+impl HttpEchoServer {
+    /// Get URL that's accessible from other Docker containers
+    /// This is needed when HTTP proxy containers need to reach the httpbin server
+    pub fn docker_url(&self) -> String {
         let host_address = get_docker_host_address();
         format!(
             "http://{host_address}:{host_port}",
@@ -55,8 +70,6 @@ impl TestServer for HttpEchoServer {
             host_port = self.port
         )
     }
-
-    // Use the default url() implementation from the trait
 }
 
 /// A containerized HTTPS echo server that provides test endpoints over TLS
@@ -96,7 +109,7 @@ impl HttpsEchoServer {
 
 impl TestServer for HttpsEchoServer {
     fn url(&self) -> String {
-        let host_address = get_docker_host_address();
+        let host_address = get_host_accessible_address();
         format!(
             "https://{host_address}:{port}",
             host_address = host_address,

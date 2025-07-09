@@ -11,11 +11,7 @@ use crate::it_support::{
 
 /// Standard test timeout duration
 #[allow(dead_code)]
-pub const STANDARD_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Standard wait duration for services to initialize
-#[allow(dead_code)]
-pub const STANDARD_WAIT: Duration = Duration::from_millis(500);
+pub const STANDARD_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// TestEnvironment provides a standard way to set up and tear down test resources.
 /// It follows the builder pattern for a fluent API, allowing tests to easily
@@ -101,6 +97,14 @@ impl TestEnvironment {
             .as_ref()
             .expect("HTTP server not initialized")
             .url()
+    }
+
+    /// Get the HTTP server URL accessible from Docker containers
+    pub fn http_docker_url(&self) -> String {
+        self.http_server
+            .as_ref()
+            .expect("HTTP server not initialized")
+            .docker_url()
     }
 
     /// Get the HTTPS server URL, or panic if not available

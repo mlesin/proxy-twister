@@ -109,6 +109,15 @@ pub fn get_docker_host_address() -> String {
     }
 }
 
+/// Get the host address that can be used from the host machine to reach containerized services
+/// This is different from get_docker_host_address() which is for container-to-container communication
+#[allow(dead_code)]
+pub fn get_host_accessible_address() -> String {
+    // For tests running on the host machine, always use localhost
+    // The Docker container ports are mapped to localhost
+    "127.0.0.1".to_string()
+}
+
 /// Get the Docker Desktop host IP by checking Docker's internal network
 #[allow(dead_code)]
 fn get_docker_desktop_host_ip() -> Option<String> {

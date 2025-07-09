@@ -136,38 +136,11 @@ pub fn create_socks5_test_client(proxy_url: &str) -> Result<reqwest::Client, req
         .build()
 }
 
-/// Create a test HTTP client with custom root certificate
-#[allow(dead_code)]
-pub fn create_test_client_with_cert(
-    proxy_url: &str,
-    cert_pem: &str,
-) -> Result<reqwest::Client, reqwest::Error> {
-    let cert = reqwest::Certificate::from_pem(cert_pem.as_bytes())?;
-    let proxy = reqwest::Proxy::http(proxy_url)?;
-
-    reqwest::Client::builder()
-        .proxy(proxy)
-        .add_root_certificate(cert)
-        .timeout(Duration::from_secs(10))
-        .build()
-}
-
 /// Create a direct HTTP client (no proxy)
 #[allow(dead_code)]
 pub fn create_direct_client() -> Result<reqwest::Client, reqwest::Error> {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .danger_accept_invalid_certs(true)
-        .build()
-}
-
-/// Create a direct HTTP client with custom root certificate
-#[allow(dead_code)]
-pub fn create_direct_client_with_cert(cert_pem: &str) -> Result<reqwest::Client, reqwest::Error> {
-    let cert = reqwest::Certificate::from_pem(cert_pem.as_bytes())?;
-
-    reqwest::Client::builder()
-        .add_root_certificate(cert)
-        .timeout(Duration::from_secs(10))
         .build()
 }

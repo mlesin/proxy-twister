@@ -15,7 +15,9 @@ async fn test_http_proxy_routing() -> Result<(), Box<dyn std::error::Error>> {
         let client = env.create_proxy_client()?;
 
         // Test a basic GET request
-        let url = format!("{}/get", env.http_url());
+        // For HTTP proxy tests, use the Docker-accessible URL since the containerized proxy
+        // needs to reach the target server using an address accessible from within Docker
+        let url = format!("{}/get", env.http_docker_url());
         let response = test_http_get(&client, &url).await?;
 
         // Verify the response
@@ -54,7 +56,7 @@ async fn test_http_proxy_post_request() -> Result<(), Box<dyn std::error::Error>
         });
 
         // Make a POST request
-        let url = format!("{}/post", env.http_url());
+        let url = format!("{}/post", env.http_docker_url());
         let response = test_http_post(&client, &url, &payload).await?;
 
         // Verify the response
@@ -95,7 +97,7 @@ async fn test_http_proxy_large_payload() -> Result<(), Box<dyn std::error::Error
         });
 
         // Make a POST request with the large payload
-        let url = format!("{}/post", env.http_url());
+        let url = format!("{}/post", env.http_docker_url());
         let response = tokio::time::timeout(
             Duration::from_secs(30), // Use longer timeout for large payload
             client.post(&url).json(&payload).send(),
@@ -127,7 +129,7 @@ async fn test_http_proxy_concurrent_requests() -> Result<(), Box<dyn std::error:
         let client = env.create_proxy_client()?;
 
         // Create multiple request futures
-        let base_url = env.http_url();
+        let base_url = env.http_docker_url();
         let request_futures = (0..10).map(|i| {
             let client = client.clone();
             let url = format!("{base_url}/get?id={i}");
@@ -208,7 +210,7 @@ async fn test_http_proxy_connection_persistence() -> Result<(), Box<dyn std::err
         let client = env.create_proxy_client()?;
 
         // Make a series of requests with the same client to test connection reuse
-        let base_url = env.http_url();
+        let base_url = env.http_docker_url();
 
         // First request to establish connection
         let response1 = test_http_get(&client, &format!("{base_url}/get?req=1")).await?;
@@ -249,7 +251,7 @@ async fn test_http_proxy_headers() -> Result<(), Box<dyn std::error::Error>> {
         let client = env.create_proxy_client()?;
 
         // Make a request with custom headers
-        let url = format!("{}/headers", env.http_url());
+        let url = format!("{}/headers", env.http_docker_url());
         let response = tokio::time::timeout(
             STANDARD_TIMEOUT,
             client
@@ -322,7 +324,7 @@ async fn test_http_proxy_timeout_handling() -> Result<(), Box<dyn std::error::Er
             .build()?;
 
         // Make a request to a delayed endpoint
-        let url = format!("{}/delay/5", env.http_url()); // 5 second delay
+        let url = format!("{}/delay/5", env.http_docker_url()); // 5 second delay
 
         // The request should time out
         let result = client.get(&url).send().await;

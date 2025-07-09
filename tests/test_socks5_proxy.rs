@@ -10,7 +10,7 @@ async fn test_socks5_proxy_routing() -> Result<(), Box<dyn std::error::Error>> {
         let client = env.create_proxy_client()?;
 
         // Test a basic GET request
-        let url = format!("{}/get", env.http_url());
+        let url = format!("{}/get", env.http_docker_url());
         let response = test_http_get(&client, &url).await?;
 
         // Verify the response
@@ -49,7 +49,7 @@ async fn test_socks5_proxy_post_request() -> Result<(), Box<dyn std::error::Erro
         });
 
         // Make a POST request
-        let url = format!("{}/post", env.http_url());
+        let url = format!("{}/post", env.http_docker_url());
         let response =
             tokio::time::timeout(STANDARD_TIMEOUT, client.post(&url).json(&payload).send())
                 .await??;
@@ -92,7 +92,7 @@ async fn test_socks5_proxy_large_payload() -> Result<(), Box<dyn std::error::Err
         });
 
         // Make a POST request with the large payload
-        let url = format!("{}/post", env.http_url());
+        let url = format!("{}/post", env.http_docker_url());
         let response = tokio::time::timeout(
             std::time::Duration::from_secs(30), // Use longer timeout for large payload
             client.post(&url).json(&payload).send(),
@@ -124,7 +124,7 @@ async fn test_socks5_proxy_pattern_matching() -> Result<(), Box<dyn std::error::
         let client = env.create_proxy_client()?;
 
         // Test basic GET request with pattern matching (all traffic goes through SOCKS5)
-        let url = format!("{}/get", env.http_url());
+        let url = format!("{}/get", env.http_docker_url());
         let response = it_support::test_http_get(&client, &url).await?;
 
         // Verify the response
